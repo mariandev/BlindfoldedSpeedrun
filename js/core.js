@@ -1,3 +1,4 @@
+var bg_canvas, bg_ctx;
 var floor_canvas, floor_ctx;
 var walls_canvas, walls_ctx;
 var objects_canvas, objects_ctx;
@@ -15,6 +16,9 @@ var level = 0;
 var state = 0;
 var teleporting = false;
 var do_not_teleport = false;
+var lastTS = 0;
+var score_added = false;
+var user_logged_in = false;
 
 var showing_countdown = false;
 
@@ -28,64 +32,81 @@ var animations = [];
 
 var sounds = {};
 
+var keys = [];
+
 var player = {
     x: 0,
     y: 0,
+    rx: 0,
+    ry: 0,
+    speed: 15,
     scale: 1,
     dir: 0,
     beginTime: 0,
     endTime: 0,
     totalTime: 0,
     levelTempTime: 0,
-    update: function(e) {
+    update: function(dt) {
         
         if(teleporting || showing_countdown) return;
         
-        if(e.which === 37){
-            if(map.tiles[player.y][player.x-1] === 0 && !is_door_at_xy(player.x - 1, player.y)) {
-                player.x--;
-                player.moves++;   
+        var lx = player.x;
+        var ly = player.y;
+        var s = player.speed * dt;
+        
+        if(keys[37]){
+            
+            if(map.tiles[Math.floor(player.ry)][Math.floor(player.rx - s)] === 0 && !is_door_at_xy(Math.floor(player.rx - s), Math.floor(player.ry))) {
+                player.rx -= s;
+                player.x   = Math.floor(player.rx);
             }
+            
             player.dir = 3;
             
-            do_not_teleport = false;
-            
         }
-        if(e.which === 39){
-            if(map.tiles[player.y][player.x+1] === 0 && !is_door_at_xy(player.x + 1, player.y)) {
-                player.x++;
-                player.moves++;   
-            }
-            player.dir = 1;
+        if(keys[39]){
             
-            do_not_teleport = false;
+            if(map.tiles[Math.floor(player.ry)][Math.floor(player.rx + s)] === 0 && !is_door_at_xy(Math.floor(player.rx + s), Math.floor(player.ry))) {
+                player.rx += s;
+                player.x   = Math.floor(player.rx);
+            }
+            
+            player.dir = 1;
             
         }
         
-        if(e.which === 38){
-            if(map.tiles[player.y-1][player.x] === 0 && !is_door_at_xy(player.x, player.y - 1)) {
-                player.y--;
-                player.moves++;   
+        if(keys[38]){
+            
+            if(map.tiles[Math.floor(player.ry - s)][Math.floor(player.rx)] === 0 && !is_door_at_xy(Math.floor(player.rx), Math.floor(player.ry - s))) {
+                player.ry -= s;
+                player.y   = Math.floor(player.ry);
             }
+            
             player.dir = 0;
             
-            do_not_teleport = false;
-            
         }
-        if(e.which === 40){
-            if(map.tiles[player.y+1][player.x] === 0 && !is_door_at_xy(player.x, player.y + 1)) {
-                player.y++;
-                player.moves++;   
+        if(keys[40]){
+            
+            if(map.tiles[Math.floor(player.ry + s)][Math.floor(player.rx)] === 0 && !is_door_at_xy(Math.floor(player.rx), Math.floor(player.ry + s))) {
+                player.ry += s;
+                player.y   = Math.floor(player.ry);
             }
+            
             player.dir = 2;
             
-            do_not_teleport = false;
-            
         }
+        
+        if(lx !== player.x || ly != player.y) {
+            do_not_teleport = false;
+        }
+        
     }
 };
 
 function init_game(cb) {
+    bg_canvas = document.getElementById("bg");
+    bg_ctx=  bg_canvas.getContext("2d");
+    
     floor_canvas = document.getElementById("floor");
     floor_ctx=  floor_canvas.getContext("2d");
     
@@ -107,8 +128,8 @@ function init_game(cb) {
     gui_canvas = document.getElementById("gui");
     gui_ctx=  gui_canvas.getContext("2d");
     
-    floor_canvas.width = walls_canvas.width = objects_canvas.width = light_canvas.width = entities_canvas.width = fx_canvas.width = gui_canvas.width = width;
-    floor_canvas.height = walls_canvas.height = objects_canvas.height = light_canvas.height = entities_canvas.height = fx_canvas.height = gui_canvas.height = height;
+    bg_canvas.width =floor_canvas.width = walls_canvas.width = objects_canvas.width = light_canvas.width = entities_canvas.width = fx_canvas.width = gui_canvas.width = width;
+    bg_canvas.height = floor_canvas.height = walls_canvas.height = objects_canvas.height = light_canvas.height = entities_canvas.height = fx_canvas.height = gui_canvas.height = height;
     
     ss = new Image();
     
@@ -117,92 +138,64 @@ function init_game(cb) {
     }).bind(this, cb);
     ss.src = 'assets/spritesheet.png';
     
-    sounds.teleport = new buzz.sound( "assets/sounds/teleport", {
+    /*sounds.teleport = new buzz.sound( "assets/sounds/teleport", {
         formats: [ "ogg" ]
     });
     
     sounds.pickup = new buzz.sound( "assets/sounds/pickup", {
         formats: [ "ogg" ]
+    });*/
+    
+    //GJAPI.UserLogout();
+    GJAPI.UserFetchCurrent(function(pResponse){
+        if(pResponse.success) {
+            user_logged_in = true;
+        }else {
+            GJAPI.UserLoginManual(GJAPI.sUserName, GJAPI.sUserToken, function(pResponse){
+                if(pResponse.success)
+                    user_logged_in = true;
+            });
+        }
+    });
+    
+    
+    bg_ctx.rect(0, 0, width, height);
+
+    // create radial gradient
+    var grd = bg_ctx.createRadialGradient(width / 2, height / 2, 10, width/2, height/ 2 , width/2);
+    // light blue
+    //grd.addColorStop(0, '#141e20');
+    grd.addColorStop(0, "#050505");
+    // dark blue
+    grd.addColorStop(1, '#000');
+
+    bg_ctx.fillStyle = grd;
+    bg_ctx.fill();
+    
+    var n = 1000;
+    for(var i=0;i<n;i++) {
+        bg_ctx.beginPath();
+        var x = Math.random() * width;
+        var y = Math.random() * height;
+        var d = Math.sqrt( ( width / 2 - x ) * ( width / 2 - x ) + ( height / 2 - y ) * ( height / 2 - y ) );
+        bg_ctx.rect(x, y, 1, 1);
+        bg_ctx.fillStyle = 'rgba(255, 255, 255, ' + ( 1 - Math.abs( d / width * 2.15 ) ) + ')';
+        bg_ctx.fill();
+    }
+    
+    document.addEventListener("keyup", function(e) {
+        keys[e.which] = 0;
     });
     
     document.addEventListener("keydown", function(e) {
-        if(state === 0) {
-            if(e.which === 32){
-                state = 4;
-                
-            }
-        }else if(state === 1){
-            player.update(e);
-            
-            for(var i = 0;i < map.teleporters.length;i++) {
-                if(map.teleporters[i].x === player.x && map.teleporters[i].y === player.y) {
-                    //sounds.teleport.play();
-                    if(map.teleporters[i].task === 'finish' && !teleporting) {
-                        player.endTime = Date.now();
-                        teleporting = true;
-                        add_teleport_animation(player.x, player.y, function() { next_level(); }, 'finish');
-                    }else if(map.teleporters[i].task === 'goto' && !teleporting) {
-                        teleporting = true;
-                        
-                        player.levelTempTime += Date.now() - player.beginTime;
-                        
-                        add_teleport_animation(player.x, player.y, (function(from, to) { 
-                            
-                            add_line_animation( (map.teleporters[from].x + 0.5) * tile_width, (map.teleporters[from].y + 0.5) * tile_height, (map.teleporters[to].x + 0.5) * tile_width, (map.teleporters[to].y + 0.5 ) * tile_height, 60, (function(to) {
-                                
-                                do_not_teleport = true;
-                            
-                                player.x = map.teleporters[to].x;
-                                player.y = map.teleporters[to].y;
-                                
-                                add_teleport_animation(player.x, player.y, function() { 
-                                    
-                                    teleporting = false;
-                                    
-                                    player.beginTime = Date.now();
-                                    
-                                }, 'goto', true);
-                                
-                            }).bind(null, to));
-                            
-                        }).bind(null, i,  map.teleporters[i].dest), 'goto');
-                    }
-                }
-            }
-            
-            if(map.doors)
-                for(var i=0;i < map.doors.length;i++) {
-                    if(map.doors[i].kx === player.x && map.doors[i].ky === player.y) {
-                        //sounds.pickup.play();
-                        add_circle_animation( ( map.doors[i].dx + 0.5 ) * tile_width, ( map.doors[i].dy + 0.5 ) * tile_height, 10, 50, function() {});
-                        map.doors.splice(i--, 1);
-                    }
-                }
-            
-        }else if(state === 2) {
-            if(e.which === 32) {
-                load_map();
-                state = 1;
-                
-                showing_countdown = true;
-                
-                add_countdown(3);
-                
-            }
-        }else if(state === 3) {
-            if(e.which === 32) {
-                state = 0;
-            }
-        }else if(state === 4) {
-            if(e.which === 32) {
-                game_reset();
-                state = 1;
-                
-                showing_countdown = true;
-                
-                add_countdown(3);
-            }
-        }
+        
+        if(keys[e.which] > 0) keys[e.which] = 2;
+        else keys[e.which] = 1;
+        
+        console.log(e.which + ": " + keys[e.which]);
+        
+        if(e.which == 32 || (e.which >= 37 && e.which <= 40) )
+            e.preventDefault();
     });
     
     
@@ -218,7 +211,7 @@ function add_countdown(count) {
             showing_countdown = false;
         }
     }).bind(null, count), false, function() {
-        light_level += 0.05;
+        light_level += 0.035;
         light_level = light_level > 1 ? 1 : light_level;
         //light_level = 0.85; // just for testing
     });
@@ -255,6 +248,8 @@ function next_level() {
 function player_reset() {
     player.x = map.start.x;
     player.y = map.start.y;
+    player.rx = map.start.x;
+    player.ry = map.start.y;
     player.dir = map.start.dir;
     player.beginTime = 0;
     player.endTime = 0;
@@ -264,6 +259,7 @@ function player_reset() {
 function game_reset() {
     total_moves = 0;
     player.totalTime = 0;
+    score_added = false;
     level = 0 ;//just for testing
     load_map();
 }
@@ -279,7 +275,7 @@ function add_teleport_animation(x, y, next, teleporter_type, reverse) {
         light_level: 1,
         rings: 0,
         state: 0,
-        speed: 0.05,
+        speed: 0.1,
         x: x,
         y: y,
         next: next,
@@ -311,7 +307,7 @@ function add_line_animation(ix, iy, fx, fy, len, next) {
     
     animations.push({
         type: 'line',
-        speed: 2.5,
+        speed: 4,
         ix: ix,
         iy: iy,
         fx: fx,
@@ -362,9 +358,68 @@ function pretty_time(ts) {
 
 function update() {
     
+    var ts = Date.now();
+    var dt = (ts - lastTS) / 1000;
+    lastTS = ts;
+    
     if(state === 0) {
-        
+        if(keys[32] === 1) {
+            keys[32] = 2;
+            state = 4;
+        }
     }else if(state === 1) {
+        
+        
+        player.update(dt);
+            
+        for(var i = 0;i < map.teleporters.length;i++) {
+            if(map.teleporters[i].x === player.x && map.teleporters[i].y === player.y && !teleporting && !do_not_teleport) {
+                //sounds.teleport.play();
+                if(map.teleporters[i].task === 'finish') {
+                    player.endTime = Date.now();
+                    teleporting = true;
+                    add_teleport_animation(player.x, player.y, function() { next_level(); }, 'finish');
+                }else if(map.teleporters[i].task === 'goto') {
+                    teleporting = true;
+                    
+                    player.levelTempTime += Date.now() - player.beginTime;
+                    
+                    add_teleport_animation(player.x, player.y, (function(from, to) { 
+                        
+                        add_line_animation( (map.teleporters[from].x + 0.5) * tile_width, (map.teleporters[from].y + 0.5) * tile_height, (map.teleporters[to].x + 0.5) * tile_width, (map.teleporters[to].y + 0.5 ) * tile_height, 60, (function(to) {
+                            
+                            do_not_teleport = true;
+                        
+                            player.x = map.teleporters[to].x;
+                            player.y = map.teleporters[to].y;
+                            
+                            player.rx = map.teleporters[to].x;
+                            player.ry = map.teleporters[to].y;
+                            
+                            add_teleport_animation(player.x, player.y, function() { 
+                                
+                                teleporting = false;
+                                
+                                player.beginTime = Date.now();
+                                
+                            }, 'goto', true);
+                            
+                        }).bind(null, to));
+                        
+                    }).bind(null, i,  map.teleporters[i].dest), 'goto');
+                }
+            }
+        }
+        
+        if(map.doors)
+            for(var i=0;i < map.doors.length;i++) {
+                if(map.doors[i].kx === player.x && map.doors[i].ky === player.y) {
+                    //sounds.pickup.play();
+                    add_circle_animation( ( map.doors[i].dx + 0.5 ) * tile_width, ( map.doors[i].dy + 0.5 ) * tile_height, 10, 50, function() {});
+                    map.doors.splice(i--, 1);
+                }
+            }
+        
         
         for(var i=0;i<animations.length;i++) {
             if(animations[i].type === 'teleport') {
@@ -434,9 +489,30 @@ function update() {
         }
         
     }else if(state === 2) {
-    
+        if(keys[32] === 1) {
+            keys[32] = 2;
+            load_map();
+            state = 1;
+            
+            showing_countdown = true;
+            
+            add_countdown(3);
+        }
     }else if(state === 3) {
-        
+        if(keys[32] === 1) {
+            keys[32] = 2;
+            state = 0;
+        }
+    }else if(state === 4) {
+        if(keys[32] === 1) {
+            keys[32] = 2;
+            game_reset();
+            state = 1;
+            
+            showing_countdown = true;
+            
+            add_countdown(3);
+        }
     }
 }
 
@@ -481,7 +557,7 @@ function render() {
                           (x === player.x && y - 1 == player.y && map.tiles[y-1][x] === 0) ||
                           (x === player.x && y + 1 == player.y && map.tiles[y+1][x] === 0) ) {
                     light_ctx.fillStyle = "rgba(0, 0, 0, " + Math.min(0.5, light_level) + ")";
-                }else if(x === player.x && y == player.y){
+                }else if( (x === player.x && y == player.y) || map.tiles[y][x] === 35){
                     light_ctx.fillStyle = "rgba(0, 0, 0, 0)";
                 }else{
                     light_ctx.fillStyle = "rgba(0, 0, 0, "+ light_level +")";
@@ -596,6 +672,8 @@ function render() {
         render_text("Total time: " + pretty_time(player.totalTime), width/2, 190);
         render_text("Press SPACE to go to the menu", width/2, height/2);
         
+        addScore();
+        
     }else if(state === 4) {
         
         render_text("All you need to know", width/2, 50, {font: 'bold 50px Arial'});
@@ -616,6 +694,14 @@ function loop() {
     update();
     render();
     
+}
+
+function addScore() {
+    if(!score_added) {
+        score_added = true;
+        if(user_logged_in)
+            GJAPI.ScoreAdd(46388, player.totalTime, pretty_time(player.totalTime));
+    }
 }
 
 window.onload = function() {
